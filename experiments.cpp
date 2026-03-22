@@ -1,107 +1,180 @@
-#include <random>
-#include <chrono>
-#include <cmath>
+#include <iostream>
 #include "slau_solution.h"
+#include "for_experiments.h"
 
+// Эксперимент 1 -- сравнение времени решения одной системы
+void timeComparison() {
+    int sizes[] = {100, 200, 500, 1000};
+    for (auto n: sizes) {
+        double** A = new double*[n];
+        for (int i = 0; i < n; ++i) A[i] = new double[n];
+        double** L = new double*[n];
+        for (int i = 0; i < n; ++i) L[i] = new double[n];
+        double** U = new double*[n];
+        for (int i = 0; i < n; ++i) U[i] = new double[n];
+        double** Q = new double*[n];
+        for (int i = 0; i < n; ++i) Q[i] = new double[n];
+        double** R = new double*[n];
+        for (int i = 0; i < n; ++i) R[i] = new double[n];
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) L[i][j] = 0;
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) U[i][j] = 0;
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) Q[i][j] = 0;
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) R[i][j] = 0;
+        for (int i=0; i<n; i++) L[i][i] = 1;
+        double b[n];
 
-double residual(double **H, double *x, double *b, int n) {
-    double b1[n];
-    for (int i=0; i<n; i++) {
-        double sum = 0;
-        for (int j=0; j<n; j++) {
-            sum += H[i][j] * x[j];
+        generateMatrix(A, n);
+        generateAnswers(b, n);
+
+        long long lu_time = LU_time(A, L, U, n);
+        double x[n];
+        long long lusolve_time = LUsolution_time(L, U, b, x, n);
+
+        long long qmatr_time = Qmatrix_time(A, Q, n);
+        long long rmatr_time = Rmatrix_time(A, Q, R, n);
+        double x1[n];
+        long long qrsolve_time = QRsolution_time(Q, R, b, x1, n);
+        
+        std::cout << "Matrix size: " << n << std::endl;
+        std::cout << "                   decomposition time   substitution time   total solution time" << std::endl;
+        std::cout << "LU-decomposition   " << lu_time << "             " << lusolve_time << "            " << lu_time+lusolve_time << std::endl;
+        std::cout << "QR-decomposition   " << qmatr_time+rmatr_time << "            " << qrsolve_time << "             " << qmatr_time+rmatr_time+qrsolve_time << std::endl;
+        
+        for (int i=0; i<n; i++) delete[] A[i];
+        delete[] A;
+        for (int i=0; i<n; i++) delete[] L[i];
+        delete[] L;
+        for (int i=0; i<n; i++) delete[] U[i];
+        delete[] U;
+        for (int i=0; i<n; i++) delete[] Q[i];
+        delete[] Q;
+        for (int i=0; i<n; i++) delete[] R[i];
+        delete[] R;
+            
+        std::cout << std::endl;
+    }
+}
+
+// Эксперимент 2 -- экономия времени при множественных правых частях
+void multipleAnswers() {
+    
+    int n = 500;
+    double** A = new double*[n];
+    for (int i = 0; i < n; ++i) A[i] = new double[n];
+    double** L = new double*[n];
+    for (int i = 0; i < n; ++i) L[i] = new double[n];
+    double** U = new double*[n];
+    for (int i = 0; i < n; ++i) U[i] = new double[n];
+    double** Q = new double*[n];
+    for (int i = 0; i < n; ++i) Q[i] = new double[n];
+    double** R = new double*[n];
+    for (int i = 0; i < n; ++i) R[i] = new double[n];
+    for (int i=0; i<n; i++) for (int j=0; j<n; j++) L[i][j] = 0;
+    for (int i=0; i<n; i++) for (int j=0; j<n; j++) U[i][j] = 0;
+    for (int i=0; i<n; i++) for (int j=0; j<n; j++) Q[i][j] = 0;
+    for (int i=0; i<n; i++) for (int j=0; j<n; j++) R[i][j] = 0;
+    for (int i=0; i<n; i++) L[i][i] = 1;
+    double b[n];
+    
+    generateMatrix(A, n);
+
+    long long lu_time = LU_time(A, L, U, n);
+    long long qr_time = Qmatrix_time(A, Q, n) + Rmatrix_time(A, Q, R, n);
+
+    int K[] = {1, 10, 100};
+    long long LUsols[3];
+    long long QRsols[3];
+    for (int k = 0; k<3; k++) {
+        long long lusol_time = 0, qrsol_time = 0;
+        for (int i=0; i<k; i++) {
+            generateAnswers(b, n);
+            double x[n];
+            lusol_time += LUsolution_time(L, U, b, x, n);
+            double x1[n];
+            qrsol_time += QRsolution_time(Q, R, b, x1, n);
         }
-        b1[i] = sum;
+        LUsols[k] = lusol_time;
+        QRsols[k] = qrsol_time;
+    }
+    for (int k = 0; k<3; k++) {
+        std::cout << "k = " << K[k] << std::endl;
+        std::cout << "LU time: " << lu_time << " " << LUsols[k] << " " << lu_time+LUsols[k] << std::endl;
+        std::cout << "QR time: " << qr_time << " " << QRsols[k] << " " << qr_time+QRsols[k] << std::endl;
     }
 
-    double max_dif = -1;
-    for (int i=0; i<n; i++)
-        max_dif = std::max(std::abs(b1[i]-b[i]), max_dif);
-    
-    return max_dif;
+    for (int i=0; i<n; i++) delete[] A[i];
+    delete[] A;
+    for (int i=0; i<n; i++) delete[] L[i];
+    delete[] L;
+    for (int i=0; i<n; i++) delete[] U[i];
+    delete[] U;
+    for (int i=0; i<n; i++) delete[] Q[i];
+    delete[] Q;
+    for (int i=0; i<n; i++) delete[] R[i];
+    delete[] R;
 }
 
-double relativeError(double *x1, double *x, int n) {
-    double max_dif = -1, max_x = -1;
-    for (int i=0; i<n; i++) {
-        max_dif = std::max(std::abs(x1[i]-x[i]), max_dif);
-        max_x = std::max(std::abs(x[i]), max_x);
-    }
-    return max_dif / max_x;
-}
+// Эксперимент 3 -- проверка точности на плохо обусловленных матрицах
+void illConditionedMatrices() {
+    int sizes[] = {5, 10, 15};
+    for (auto n: sizes) {
+        double** A = new double*[n];
+        for (int i = 0; i < n; ++i) A[i] = new double[n];
+        double** L = new double*[n];
+        for (int i = 0; i < n; ++i) L[i] = new double[n];
+        double** U = new double*[n];
+        for (int i = 0; i < n; ++i) U[i] = new double[n];
+        double** Q = new double*[n];
+        for (int i = 0; i < n; ++i) Q[i] = new double[n];
+        double** R = new double*[n];
+        for (int i = 0; i < n; ++i) R[i] = new double[n];
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) L[i][j] = 0;
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) U[i][j] = 0;
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) Q[i][j] = 0;
+        for (int i=0; i<n; i++) for (int j=0; j<n; j++) R[i][j] = 0;
+        for (int i=0; i<n; i++) L[i][i] = 1;
+        double b[n];
 
-void HilbertMatrix(double **H, int n) {
-    for (int i=0; i<n; i++) {
-        for (int j=0; j<n; j++) {
-            H[i][j] = 1.0 / ((i+1) + (j+1) - 1);
+        HilbertMatrix(A, n);
+        
+        double x[n];
+        for (int i=0; i<n; i++) x[i] = 1;
+        for (int i=0; i<n; i++) {
+            double sum=0;
+            for (int j=0; j<n; j++) sum += A[i][j];
+            b[i] = sum; 
         }
+
+        double x1[n];
+        double x2[n];
+        LU(A, L, U, n);
+        LUsolve(L, U, b, x1, n);
+        Qmatrix(A, Q, n);
+        Rmatrix(A, Q, R, n);
+        QRsolve(Q, R, b, x2, n);
+
+        double rel_er1 = relativeError(x1, x, n);
+        double rel_er2 = relativeError(x2, x, n);
+
+        double resid1 = residual(A, x1, b, n);
+        double resid2 = residual(A, x2, b, n);
+
+        std::cout << "Hilbert matrix of size " << n << std::endl;
+        std::cout << "LU-decomposition:" << std::endl; 
+        std::cout << "Relative error: " << rel_er1 << "   " << "Residual: " << resid1 << std::endl;
+        std::cout << "QR-decomposition:" << std::endl; 
+        std::cout << "Relative error: " << rel_er2 << "   " << "Residual: " << resid2 << std::endl;
+        std::cout << std::endl;
+
+        for (int i=0; i<n; i++) delete[] A[i];
+        delete[] A;
+        for (int i=0; i<n; i++) delete[] L[i];
+        delete[] L;
+        for (int i=0; i<n; i++) delete[] U[i];
+        delete[] U;
+        for (int i=0; i<n; i++) delete[] Q[i];
+        delete[] Q;
+        for (int i=0; i<n; i++) delete[] R[i];
+        delete[] R;
     }
 }
-
-void generateMatrix(double **A, int n) {
-    std::mt19937 gen(42);
-    std::uniform_real_distribution<> dis(-1.0, 1.0); 
-    for (int i=0; i<n; i++) {
-        for (int j=0; j<n; j++) {
-            A[i][j] = dis(gen);
-        }
-    }
-}
-
-void generateAnswers(double *b, int n) {
-    std::mt19937 gen(42);
-    std::uniform_real_distribution<> dis(-1.0, 1.0); 
-    for (int i=0; i<n; i++) {
-        b[i] = dis(gen);
-    }
-}
-
-long long LU_time(double **A, double **L, double **U, int size) {
-    
-    auto start = std::chrono::steady_clock::now();
-    LU(A, L, U, size);
-    auto end = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    return elapsed.count(); 
-} 
-
-long long LUsolution_time(double **L, double **U, double *b, double *x, int size) {
-    
-    auto start = std::chrono::steady_clock::now();
-    LUsolve(L, U, b, x, size);
-    auto end = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    return elapsed.count(); 
-} 
-
-long long Qmatrix_time(double **A, double **Q, int size) {
-    
-    auto start = std::chrono::steady_clock::now();
-    Qmatrix(A, Q, size);
-    auto end = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    return elapsed.count(); 
-} 
-
-long long Rmatrix_time(double **A, double **Q, double **R, int size) {
-    
-    auto start = std::chrono::steady_clock::now();
-    Rmatrix(A, Q, R, size);
-    auto end = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    return elapsed.count(); 
-} 
-
-long long QRsolution_time(double **Q, double **R, double *b, double *x, int size) {
-    
-    auto start = std::chrono::steady_clock::now();
-    QRsolve(Q, R, b, x, size);
-    auto end = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    return elapsed.count(); 
-} 
